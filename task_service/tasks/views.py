@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.db.models import Q
 from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated
@@ -26,15 +27,14 @@ class TaskViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         task = serializer.save(owner_id=self.request.user.id)
-        publish_event(
-            exchange_name='task_events',
-            routing_key='task_created',
-            message_body={
-                'task_id': task.id,
-                'title': task.title,
-                'owner_id': task.owner_id,
-                'assigned_user_id': task.assigned_user_id,
-            }
+        payload = {
+            'task_id': task.id,
+            'title': task.title,
+            'owner_id': task.owner_id,
+            'assigned_user_id': task.assigned_user_id,
+        }
+        transaction.on_commit(
+            lambda: publish_event('task_events', 'task_created', payload)
         )
 
     @swagger_auto_schema(
@@ -73,15 +73,14 @@ class TaskViewSet(viewsets.ModelViewSet):
         task.status = Task.Status.ASSIGNED
         task.save(update_fields=['assigned_user_id', 'status', 'updated_at'])
 
-        publish_event(
-            exchange_name='task_events',
-            routing_key='task_assigned',
-            message_body={
-                'task_id': task.id,
-                'title': task.title,
-                'owner_id': task.owner_id,
-                'assigned_user_id': user_id,
-            }
+        payload = {
+            'task_id': task.id,
+            'title': task.title,
+            'owner_id': task.owner_id,
+            'assigned_user_id': user_id,
+        }
+        transaction.on_commit(
+            lambda: publish_event('task_events', 'task_assigned', payload)
         )
 
         serializer = self.get_serializer(task)

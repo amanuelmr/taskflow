@@ -1,16 +1,20 @@
 # user_service/users/views.py
 
+import logging
 import secrets
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import check_password, make_password
 from django.core.mail import send_mail
 from django.conf import settings
+from django.db import transaction
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from .rabbitmq_utils import publish_event
+from .tasks import send_email_task
 from .serializers import (
     UserRegistrationSerializer,
     EmailVerificationSerializer,
@@ -22,6 +26,8 @@ from .serializers import (
 from .models import EmailVerification, PasswordReset
 
 User = get_user_model()
+
+logger = logging.getLogger(__name__)
 
 
 def generate_otp():
@@ -40,16 +46,18 @@ def tokens_for_user(user):
 
 
 def issue_otp(user, model, subject, body_template):
-    """Create a hashed OTP record and email the plain code to the user."""
+    """Create a hashed OTP record and email the plain code to the user.
+    Sending goes through Celery; falls back to synchronous send_mail when
+    the broker is unreachable so the user still gets their code."""
     otp = generate_otp()
     model.objects.create(user=user, otp=make_password(otp))
-    send_mail(
-        subject,
-        body_template.format(otp=otp),
-        settings.DEFAULT_FROM_EMAIL,
-        [user.email],
-        fail_silently=False,
-    )
+    message = body_template.format(otp=otp)
+    try:
+        send_email_task.delay(subject, message, user.email)
+    except Exception:
+        logger.exception('Celery enqueue failed; sending OTP email synchronously')
+        send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [user.email],
+                  fail_silently=False)
 
 
 class UserRegistrationView(generics.CreateAPIView):
@@ -64,6 +72,10 @@ class UserRegistrationView(generics.CreateAPIView):
             EmailVerification,
             'Verify your email',
             'Your OTP for email verification is {otp}',
+        )
+        payload = {'user_id': user.id, 'username': user.username, 'email': user.email}
+        transaction.on_commit(
+            lambda: publish_event('user_events', 'user_registered', payload)
         )
 
 

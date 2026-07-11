@@ -66,6 +66,9 @@ RABBITMQ_USER = os.getenv('RABBITMQ_USER', 'guest')
 RABBITMQ_PASSWORD = os.getenv('RABBITMQ_PASSWORD', 'guest')
 CELERY_BROKER_URL = f'amqp://{RABBITMQ_USER}:{RABBITMQ_PASSWORD}@{RABBITMQ_HOST}:{RABBITMQ_PORT}//'
 CELERY_RESULT_BACKEND = 'rpc://'
+# Per-service queue: the broker is shared, so without this each service's
+# worker would consume the other services' identically-named tasks.
+CELERY_TASK_DEFAULT_QUEUE = 'notification_service'
 
 # DRF — verify-only JWT auth (tokens issued by the user service).
 REST_FRAMEWORK = {
