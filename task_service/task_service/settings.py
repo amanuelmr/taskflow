@@ -79,6 +79,8 @@ REST_FRAMEWORK = {
         'anon': '30/min',
         'user': '300/min',
     },
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 20,
 }
 
 # Simple JWT Configuration — verify-only. Tokens are issued by the user
@@ -134,6 +136,21 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'default': {
+            'format': '[task_service] {levelname} {asctime} {name} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {'class': 'logging.StreamHandler', 'formatter': 'default'},
+    },
+    'root': {'handlers': ['console'], 'level': os.getenv('LOG_LEVEL', 'INFO')},
+}
 
 # CORS Configuration
 CORS_ALLOWED_ORIGINS = [

@@ -1,18 +1,18 @@
-# Docker Compose configuration for a microservices architecture with User, Task,
-# and Notification services. Includes RabbitMQ and a separate PostgreSQL database
-# per service. All credentials come from the .env file (see .env.example).
+# Microservices architecture: User, Task, and Notification services with
+# RabbitMQ and a PostgreSQL database per service. Credentials come from the
+# .env file (see .env.example). docker-compose.override.yml (auto-loaded)
+# switches the web services to the Django dev server with live reload.
 services:
-  # User Service
+  # ------------------------------------------------------------------ user
   user-service:
     build: ./user_service
     container_name: user_service
-    command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
+    command: sh -c "python manage.py migrate && gunicorn user_service.wsgi:application --bind 0.0.0.0:8000 --workers 2"
     volumes:
-      - ./user_service:/app
       - ./secrets:/keys:ro
     ports:
       - "8001:8000"
-    environment:
+    environment: &user-env
       DATABASE_NAME: user_db
       DATABASE_USER: ${DATABASE_USER}
       DATABASE_PASSWORD: ${DATABASE_PASSWORD}
@@ -22,8 +22,6 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USER: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
-      JWT_PRIVATE_KEY_PATH: ${JWT_PRIVATE_KEY_PATH}
-      JWT_PUBLIC_KEY_PATH: ${JWT_PUBLIC_KEY_PATH}
       EMAIL_BACKEND: ${EMAIL_BACKEND}
       EMAIL_HOST: ${EMAIL_HOST}
       EMAIL_HOST_USER: ${EMAIL_HOST_USER}
@@ -35,21 +33,45 @@ services:
       DEBUG: ${DEBUG}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      JWT_PRIVATE_KEY_PATH: ${JWT_PRIVATE_KEY_PATH}
+      JWT_PUBLIC_KEY_PATH: ${JWT_PUBLIC_KEY_PATH}
     depends_on:
-      - rabbitmq
-      - postgres-user
+      rabbitmq:
+        condition: service_healthy
+      postgres-user:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/swagger/')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
-  # Task Service
+  user-celery-worker:
+    build: ./user_service
+    container_name: user_celery_worker
+    command: celery -A user_service worker -l info
+    volumes:
+      - ./secrets:/keys:ro
+    environment: *user-env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres-user:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ------------------------------------------------------------------ task
   task-service:
     build: ./task_service
     container_name: task_service
-    command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
+    command: sh -c "python manage.py migrate && gunicorn task_service.wsgi:application --bind 0.0.0.0:8000 --workers 2"
     volumes:
-      - ./task_service:/app
       - ./secrets:/keys:ro
     ports:
       - "8002:8000"
-    environment:
+    environment: &task-env
       DATABASE_NAME: task_db
       DATABASE_USER: ${DATABASE_USER}
       DATABASE_PASSWORD: ${DATABASE_PASSWORD}
@@ -59,26 +81,46 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USER: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
-      JWT_PUBLIC_KEY_PATH: ${JWT_PUBLIC_KEY_PATH}
       SECRET_KEY: ${SECRET_KEY_TASK}
       DEBUG: ${DEBUG}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      JWT_PUBLIC_KEY_PATH: ${JWT_PUBLIC_KEY_PATH}
     depends_on:
-      - rabbitmq
-      - postgres-task
+      rabbitmq:
+        condition: service_healthy
+      postgres-task:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/swagger/')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
-  # Notification Service
+  task-celery-worker:
+    build: ./task_service
+    container_name: task_celery_worker
+    command: celery -A task_service worker -l info
+    volumes:
+      - ./secrets:/keys:ro
+    environment: *task-env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ---------------------------------------------------------- notification
   notification-service:
     build: ./notification_service
     container_name: notification_service
-    command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
+    command: sh -c "python manage.py migrate && gunicorn notification_service.wsgi:application --bind 0.0.0.0:8000 --workers 2"
     volumes:
-      - ./notification_service:/app
       - ./secrets:/keys:ro
     ports:
       - "8003:8000"
-    environment:
+    environment: &notification-env
       DATABASE_NAME: notification_db
       DATABASE_USER: ${DATABASE_USER}
       DATABASE_PASSWORD: ${DATABASE_PASSWORD}
@@ -88,25 +130,76 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USER: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
-      JWT_PUBLIC_KEY_PATH: ${JWT_PUBLIC_KEY_PATH}
+      EMAIL_BACKEND: ${EMAIL_BACKEND}
+      EMAIL_HOST: ${EMAIL_HOST}
+      EMAIL_HOST_USER: ${EMAIL_HOST_USER}
+      EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD}
+      EMAIL_PORT: ${EMAIL_PORT}
+      EMAIL_USE_TLS: ${EMAIL_USE_TLS}
+      DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL}
       SECRET_KEY: ${SECRET_KEY_NOTIFICATION}
       DEBUG: ${DEBUG}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS}
+      JWT_PUBLIC_KEY_PATH: ${JWT_PUBLIC_KEY_PATH}
     depends_on:
-      - rabbitmq
-      - postgres-notification
+      rabbitmq:
+        condition: service_healthy
+      postgres-notification:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/swagger/')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
-  # RabbitMQ
+  notification-celery-worker:
+    build: ./notification_service
+    container_name: notification_celery_worker
+    command: celery -A notification_service worker -l info
+    volumes:
+      - ./secrets:/keys:ro
+    environment: *notification-env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  notification-consumer:
+    build: ./notification_service
+    container_name: notification_consumer
+    command: python manage.py start_consumer
+    volumes:
+      - ./secrets:/keys:ro
+    environment: *notification-env
+    depends_on:
+      # Waits for the web service so migrations have been applied.
+      notification-service:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # -------------------------------------------------------- infrastructure
   rabbitmq:
     image: "rabbitmq:3-management"
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    # Host ports offset by +1 to avoid clashing with any locally running
+    # RabbitMQ; services talk to "rabbitmq:5672" on the compose network.
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "5673:5672"
+      - "15673:15672"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
 
-  # PostgreSQL for User Service
   postgres-user:
     image: postgres:13
     environment:
@@ -115,8 +208,15 @@ services:
       POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
     ports:
       - "5435:5432"
+    volumes:
+      - pgdata-user:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER} -d user_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  # PostgreSQL for Task Service
   postgres-task:
     image: postgres:13
     environment:
@@ -125,8 +225,15 @@ services:
       POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
     ports:
       - "5436:5432"
+    volumes:
+      - pgdata-task:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER} -d task_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  # PostgreSQL for Notification Service
   postgres-notification:
     image: postgres:13
     environment:
@@ -135,3 +242,16 @@ services:
       POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
     ports:
       - "5437:5432"
+    volumes:
+      - pgdata-notification:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER} -d notification_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata-user:
+  pgdata-task:
+  pgdata-notification:

@@ -155,3 +155,18 @@ USE_TZ = True
 STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'default': {
+            'format': '[user_service] {levelname} {asctime} {name} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {'class': 'logging.StreamHandler', 'formatter': 'default'},
+    },
+    'root': {'handlers': ['console'], 'level': os.getenv('LOG_LEVEL', 'INFO')},
+}

@@ -62,8 +62,11 @@ class TaskViewSet(viewsets.ModelViewSet):
         """
         task = self.get_object()  # applies queryset filtering + IsOwner
 
-        user_id = request.data.get('user_id')
-        if not isinstance(user_id, int) or user_id <= 0:
+        try:
+            user_id = int(request.data.get('user_id'))
+        except (TypeError, ValueError):
+            user_id = 0
+        if user_id <= 0:
             return Response(
                 {"detail": "user_id must be a positive integer."},
                 status=status.HTTP_400_BAD_REQUEST,

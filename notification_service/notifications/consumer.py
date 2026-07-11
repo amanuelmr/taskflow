@@ -82,9 +82,12 @@ def start_consumer():
             channel.basic_consume(queue=QUEUE_NAME, on_message_callback=_callback)
             logger.info('Waiting for messages on %s. To exit press CTRL+C', QUEUE_NAME)
             channel.start_consuming()
-        except pika.exceptions.AMQPConnectionError:
+        except (pika.exceptions.AMQPError, OSError) as exc:
+            # OSError covers DNS failures (socket.gaierror) pika does not
+            # wrap in AMQPConnectionError.
             logger.warning(
-                'RabbitMQ unavailable; retrying in %ss', RECONNECT_DELAY_SECONDS
+                'RabbitMQ unavailable (%s); retrying in %ss',
+                exc, RECONNECT_DELAY_SECONDS,
             )
             time.sleep(RECONNECT_DELAY_SECONDS)
         except KeyboardInterrupt:
