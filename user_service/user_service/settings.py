@@ -1,5 +1,5 @@
-from datetime import timedelta
 import os
+from datetime import timedelta
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -95,8 +95,13 @@ def _read_key(path):
     except OSError:
         return None
 
-_JWT_PRIVATE_KEY = _read_key(os.getenv('JWT_PRIVATE_KEY_PATH', str(BASE_DIR.parent / 'secrets' / 'jwt_private.pem')))
-_JWT_PUBLIC_KEY = _read_key(os.getenv('JWT_PUBLIC_KEY_PATH', str(BASE_DIR.parent / 'secrets' / 'jwt_public.pem')))
+_DEFAULT_KEY_DIR = BASE_DIR.parent / 'secrets'
+_JWT_PRIVATE_KEY = _read_key(
+    os.getenv('JWT_PRIVATE_KEY_PATH', str(_DEFAULT_KEY_DIR / 'jwt_private.pem'))
+)
+_JWT_PUBLIC_KEY = _read_key(
+    os.getenv('JWT_PUBLIC_KEY_PATH', str(_DEFAULT_KEY_DIR / 'jwt_public.pem'))
+)
 
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),

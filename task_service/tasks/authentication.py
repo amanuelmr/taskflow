@@ -3,6 +3,7 @@
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken
 
+
 class CustomJWTAuthentication(JWTAuthentication):
     """
     Custom JWT Authentication that does not require the user to exist in the local database.

@@ -1,5 +1,6 @@
 from django.db import models
 
+
 class NotificationLog(models.Model):
     event_type = models.CharField(max_length=100)
     payload = models.TextField()

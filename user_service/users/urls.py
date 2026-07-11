@@ -1,14 +1,14 @@
 from django.urls import path
-from rest_framework.routers import DefaultRouter
+
 from .views import (
-    UserRegistrationView,
     EmailVerificationView,
-    UserLoginView,
-    UserDetailView,
-    UserUpdateView,
-    PasswordChangeView,
     ForgotPasswordView,
+    PasswordChangeView,
     ResetPasswordView,
+    UserDetailView,
+    UserLoginView,
+    UserRegistrationView,
+    UserUpdateView,
 )
 
 urlpatterns = [

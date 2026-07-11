@@ -3,27 +3,27 @@
 import logging
 import secrets
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import check_password, make_password
 from django.core.mail import send_mail
-from django.conf import settings
 from django.db import transaction
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from .models import EmailVerification, PasswordReset
 from .rabbitmq_utils import publish_event
-from .tasks import send_email_task
 from .serializers import (
-    UserRegistrationSerializer,
     EmailVerificationSerializer,
-    UserLoginSerializer,
-    UserSerializer,
     PasswordChangeSerializer,
     PasswordResetSerializer,
+    UserLoginSerializer,
+    UserRegistrationSerializer,
+    UserSerializer,
 )
-from .models import EmailVerification, PasswordReset
+from .tasks import send_email_task
 
 User = get_user_model()
 

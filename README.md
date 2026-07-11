@@ -1,159 +1,176 @@
 # Task Management Microservices
 
-## Overview
+A task management application built as three Django REST Framework
+microservices that communicate over RabbitMQ, each with its own PostgreSQL
+database, orchestrated with Docker Compose.
 
-The **Task Management Microservices** project is a scalable and secure application built using Django and Django REST Framework (DRF). It consists of three primary services:
-
-1. **User Service**: Manages user registration, OTP verification, and JWT token issuance.
-2. **Task Service**: Handles task creation, assignment, and management.
-3. **Notification Service**: (Optional) Sends notifications based on events.
-
-All services communicate through RabbitMQ and use PostgreSQL for data storage. Docker Compose orchestrates the containerized services for easy deployment.
+1. **User Service** (`:8001`) — registration, email OTP verification, JWT
+   issuance (RS256), profile and password management.
+2. **Task Service** (`:8002`) — task CRUD and assignment, secured with JWTs
+   verified against the user service's public key.
+3. **Notification Service** (`:8003`) — consumes events from RabbitMQ,
+   records notification logs, and sends emails via Celery.
 
 ## Architecture
 
-![Architecture Diagram](architecture-diagram.png)
+```mermaid
+flowchart LR
+    client([Client])
 
-- **User Service**: Centralized authentication issuing JWT tokens.
-- **Task Service**: Task operations secured with JWT.
-- **Notification Service**: Listens to events and sends notifications.
-- **RabbitMQ**: Facilitates inter-service communication.
-- **PostgreSQL**: Dedicated databases for each service.
-- **Docker Compose**: Manages service containers.
+    subgraph user [User Service :8001]
+        userapi[API + JWT issuer]
+        userworker[Celery worker]
+    end
+    subgraph task [Task Service :8002]
+        taskapi[API]
+        taskworker[Celery worker]
+    end
+    subgraph notif [Notification Service :8003]
+        notifapi[Logs API]
+        consumer[Event consumer]
+        notifworker[Celery worker]
+    end
 
-## Technologies
+    client --> userapi & taskapi & notifapi
 
-- **Backend**: Django, Django REST Framework, drf-simplejwt, drf-yasg
-- **Messaging**: RabbitMQ
-- **Database**: PostgreSQL
-- **Containerization**: Docker, Docker Compose
+    userapi -- user_events --> mq[(RabbitMQ)]
+    taskapi -- task_events --> mq
+    mq --> consumer
+    consumer --> notifworker
+
+    userapi --- udb[(user_db)]
+    taskapi --- tdb[(task_db)]
+    notifapi --- ndb[(notification_db)]
+```
+
+- JWTs are signed **RS256** by the user service (private key); the task and
+  notification services verify with the **public key only** — no service
+  except the issuer can mint tokens.
+- Events are published to durable topic exchanges via Celery (retries with
+  backoff; API requests never fail because the broker is down). The consumer
+  uses a durable queue with manual acks and a dead-letter queue for poison
+  messages.
 
 ## Prerequisites
 
-- [Docker](https://www.docker.com/get-started)
-- [Docker Compose](https://docs.docker.com/compose/install/)
-- [Git](https://git-scm.com/downloads)
+- [Docker](https://www.docker.com/get-started) with Compose
+- OpenSSL (for JWT key generation)
 
-## Installation
-
-1. **Clone the Repository**
-
-   ```bash
-   git clone https://github.com/yourusername/task-management-microservices.git
-   cd task-management-microservices
-   ```
-
-2. **Configure Environment Variables**
-
-   Ensure the `SECRET_KEY` and other necessary environment variables are set in the `docker-compose.yml` file.
-
-3. **Build and Start Services**
-
-   ```bash
-   docker-compose up --build
-   ```
-
-## Services
-
-### 1. User Service
-
-- **URL**: `http://localhost:8001/`
-- **Endpoints**:
-  - `POST /api/users/register/`: Register a new user.
-  - `POST /api/users/verify_otp/`: Verify OTP.
-  - `POST /api/users/resend_otp/`: Resend OTP.
-  - `GET /api/users/profile/`: Get user profile.
-  - `GET /api/users/list_users/`: List all users (protected).
-
-### 2. Task Service
-
-- **URL**: `http://localhost:8002/`
-- **Endpoints**:
-  - `GET /api/tasks/`: List all tasks.
-  - `POST /api/tasks/`: Create a new task.
-  - `POST /api/tasks/{id}/assign/`: Assign a task to a user.
-
-### 3. Notification Service (Optional)
-
-- **URL**: `http://localhost:8003/`
-- **Endpoints**:
-  - `GET /api/logs/`: Retrieve notification logs (protected).
-
-## API Documentation
-
-Each service provides Swagger UI for interactive API exploration.
-
-- **User Service**: `http://localhost:8001/swagger/`
-- **Task Service**: `http://localhost:8002/swagger/`
-- **Notification Service**: `http://localhost:8003/swagger/`
-
-### Authentication
-
-1. **Register and Verify User** via User Service.
-2. **Obtain JWT Token** from `POST /api/token/`.
-3. **Authorize in Swagger** using the obtained Bearer token.
-
-## Usage
-
-### 1. Register a User
+## Setup
 
 ```bash
-curl -X POST http://localhost:8001/api/users/register/ \
+git clone <repository-url>
+cd task_management_microservice
+
+# 1. Environment: copy the example and fill in real values
+cp .env.example .env
+
+# 2. Generate the RS256 keypair (gitignored)
+openssl genrsa -out secrets/jwt_private.pem 2048
+openssl rsa -in secrets/jwt_private.pem -pubout -out secrets/jwt_public.pem
+
+# 3. Build and start everything
+docker compose up --build
+```
+
+`docker compose up` uses `docker-compose.override.yml` automatically: the
+Django dev server with live source reload. For a production-shaped run
+(gunicorn, no source mounts): `docker compose -f docker-compose.yml up`.
+
+By default emails are printed to the worker logs (console backend). To send
+real email, set `EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend`
+and the `EMAIL_*` credentials in `.env`.
+
+## API
+
+Swagger UI is available on each service at `/swagger/` (ReDoc at `/redoc/`).
+
+### User Service — `http://localhost:8001`
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/register/` | Register; emails a 6-digit OTP |
+| POST | `/api/verify-email/` | Verify email with OTP |
+| POST | `/api/login/` | Obtain JWT pair (requires verified email) |
+| POST | `/api/token/refresh/` | Refresh an access token |
+| GET | `/api/me/` | Current user profile |
+| PUT/PATCH | `/api/me/update/` | Update profile |
+| PUT | `/api/me/change-password/` | Change password |
+| POST | `/api/forgot-password/` | Request password-reset OTP |
+| POST | `/api/reset-password/` | Reset password with OTP |
+
+### Task Service — `http://localhost:8002`
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET/POST | `/api/tasks/` | List own/assigned tasks; create a task |
+| GET/PUT/PATCH/DELETE | `/api/tasks/{id}/` | Retrieve/modify/delete (owner only; assignee may read) |
+| POST | `/api/tasks/{id}/assign/` | Assign to a user (owner only) |
+
+### Notification Service — `http://localhost:8003`
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/logs/` | Notification event logs (authenticated) |
+
+All task/notification endpoints require `Authorization: Bearer <access token>`.
+
+## Example flow
+
+```bash
+# Register (OTP is printed in the user-celery-worker logs with the console backend)
+curl -X POST http://localhost:8001/api/register/ \
   -H "Content-Type: application/json" \
-  -d '{"username":"amr","email":"amr@example.com","password":"password123"}'
-```
+  -d '{"username":"alice","email":"alice@example.com","password":"Str0ng-Passw0rd!"}'
 
-### 2. Verify OTP
-
-```bash
-curl -X POST http://localhost:8001/api/users/verify_otp/ \
+# Verify
+curl -X POST http://localhost:8001/api/verify-email/ \
   -H "Content-Type: application/json" \
-  -d '{"email":"amr@example.com","otp_code":"123456"}'
-```
+  -d '{"email":"alice@example.com","otp":"123456"}'
 
-### 3. Obtain JWT Token
-
-```bash
-curl -X POST http://localhost:8001/api/token/ \
+# Login
+curl -X POST http://localhost:8001/api/login/ \
   -H "Content-Type: application/json" \
-  -d '{"username":"amr","password":"password123"}'
-```
+  -d '{"username":"alice","password":"Str0ng-Passw0rd!"}'
 
-### 4. Access Task Service Endpoints
+# Create a task
+curl -X POST http://localhost:8002/api/tasks/ \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <access>" \
+  -d '{"title":"Write report"}'
 
-Use the obtained JWT token in the `Authorization` header as `Bearer <token>`.
-
-#### List All Tasks
-
-```bash
-curl -X GET http://localhost:8002/api/tasks/ \
-  -H "Authorization: Bearer <access_token>"
-```
-
-#### Assign a Task
-
-```bash
+# Assign it
 curl -X POST http://localhost:8002/api/tasks/1/assign/ \
-  -H "Authorization: Bearer <access_token>" \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <access>" \
   -d '{"user_id":2}'
 ```
 
-## Troubleshooting
+## Development
 
-- **401 Unauthorized on Task Service Swagger**:
-  - Ensure Swagger URLs are publicly accessible by setting `permission_classes` to `AllowAny` in `urls.py`.
-  - Verify all services share the same `SECRET_KEY`.
-  - Check JWT token validity and claims.
+Each service has its own test suite (sqlite, no broker needed):
 
-- **Service Communication Issues**:
-  - Ensure RabbitMQ is running and accessible.
-  - Verify Docker containers are up and properly networked.
+```bash
+cd user_service          # or task_service / notification_service
+pip install -r requirements-dev.txt
+pytest
+ruff check .
+```
 
-- **Token Issues**:
-  - Ensure tokens include necessary claims (`user_id`, `username`, `email`).
-  - Refresh tokens if expired.
+CI (GitHub Actions) lints and tests all three services and builds the
+Docker images on every push/PR.
 
-## Contributing
+### Notes & future work
 
-Contributions are welcome! Please fork the repository and submit a pull request for any enhancements or bug fixes.
+- `rabbitmq_utils.py` is intentionally duplicated between user and task
+  services (no shared runtime); keep the copies in sync.
+- A transactional outbox could replace Celery-based publishing if
+  exactly-once event delivery becomes a requirement.
+- The notification service only has user ids for task events; a user cache
+  (fed from user_events) would let it email assignees.
+
+## Security
+
+- Secrets live in `.env` / mounted key files — never commit them.
+- If a credential does get committed, rotate it immediately; git history
+  keeps it forever.

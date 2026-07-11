@@ -93,7 +93,9 @@ def _read_key(path):
     except OSError:
         return None
 
-_JWT_PUBLIC_KEY = _read_key(os.getenv('JWT_PUBLIC_KEY_PATH', str(BASE_DIR.parent / 'secrets' / 'jwt_public.pem')))
+_JWT_PUBLIC_KEY = _read_key(
+    os.getenv('JWT_PUBLIC_KEY_PATH', str(BASE_DIR.parent / 'secrets' / 'jwt_public.pem'))
+)
 
 SIMPLE_JWT: dict = {'AUTH_HEADER_TYPES': ('Bearer',)}
 if _JWT_PUBLIC_KEY:
