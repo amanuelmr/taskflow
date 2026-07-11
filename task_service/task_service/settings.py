@@ -5,7 +5,7 @@ from datetime import timedelta
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Shared SECRET_KEY across all services
-SECRET_KEY = os.getenv('SECRET_KEY', 'mysharedsecretkey123')  # Must match User Service
+SECRET_KEY = os.getenv('SECRET_KEY', 'dev-insecure-task-service-key')
 
 DEBUG = True
 ALLOWED_HOSTS = ['*']
@@ -59,7 +59,7 @@ DATABASES = {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': os.getenv('DATABASE_NAME', 'task_db'),
         'USER': os.getenv('DATABASE_USER', 'postgres'),
-        'PASSWORD': os.getenv('DATABASE_PASSWORD', '12345678'),
+        'PASSWORD': os.getenv('DATABASE_PASSWORD', ''),
         'HOST': os.getenv('DATABASE_HOST', 'postgres-task'),
         'PORT': os.getenv('DATABASE_PORT', '5432'),
     }
