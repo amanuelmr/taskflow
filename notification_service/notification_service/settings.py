@@ -61,8 +61,49 @@ DATABASES = {
 }
 
 RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', 'rabbitmq')
-CELERY_BROKER_URL = f'amqp://guest:guest@{RABBITMQ_HOST}//'
+RABBITMQ_PORT = int(os.getenv('RABBITMQ_PORT', '5672'))
+RABBITMQ_USER = os.getenv('RABBITMQ_USER', 'guest')
+RABBITMQ_PASSWORD = os.getenv('RABBITMQ_PASSWORD', 'guest')
+CELERY_BROKER_URL = f'amqp://{RABBITMQ_USER}:{RABBITMQ_PASSWORD}@{RABBITMQ_HOST}:{RABBITMQ_PORT}//'
 CELERY_RESULT_BACKEND = 'rpc://'
+
+# DRF — verify-only JWT auth (tokens issued by the user service).
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'notifications.authentication.CustomJWTAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
+    'DEFAULT_THROTTLE_CLASSES': (
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ),
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '30/min',
+        'user': '300/min',
+    },
+}
+
+# Simple JWT — RS256 public key only; HS256 fallback for dev/tests.
+def _read_key(path):
+    try:
+        with open(path) as f:
+            return f.read()
+    except OSError:
+        return None
+
+_JWT_PUBLIC_KEY = _read_key(os.getenv('JWT_PUBLIC_KEY_PATH', str(BASE_DIR.parent / 'secrets' / 'jwt_public.pem')))
+
+SIMPLE_JWT: dict = {'AUTH_HEADER_TYPES': ('Bearer',)}
+if _JWT_PUBLIC_KEY:
+    SIMPLE_JWT.update({
+        'ALGORITHM': 'RS256',
+        'SIGNING_KEY': None,
+        'VERIFYING_KEY': _JWT_PUBLIC_KEY,
+    })
+else:
+    SIMPLE_JWT.update({'ALGORITHM': 'HS256', 'SIGNING_KEY': SECRET_KEY})
 
 SWAGGER_SETTINGS = {
     'USE_SESSION_AUTH': False,

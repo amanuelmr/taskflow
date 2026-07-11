@@ -4,7 +4,13 @@ from django.conf import settings
 
 def publish_event(exchange_name, routing_key, message_body):
     connection = pika.BlockingConnection(
-        pika.ConnectionParameters(host=settings.RABBITMQ_HOST)
+        pika.ConnectionParameters(
+            host=settings.RABBITMQ_HOST,
+            port=settings.RABBITMQ_PORT,
+            credentials=pika.PlainCredentials(
+                settings.RABBITMQ_USER, settings.RABBITMQ_PASSWORD
+            ),
+        )
     )
     channel = connection.channel()
     channel.exchange_declare(exchange=exchange_name, exchange_type='topic', durable=True)

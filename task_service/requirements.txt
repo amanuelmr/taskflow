@@ -7,3 +7,4 @@ django-cors-headers>=3.13
 # djangorestframework-authtoken>=3.14
 drf-yasg>=1.21.5
 djangorestframework-simplejwt>=5.2.2
+cryptography>=42

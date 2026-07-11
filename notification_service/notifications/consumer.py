@@ -9,7 +9,13 @@ def start_consumer():
     Consumes events from user_events and task_events.
     """
     connection = pika.BlockingConnection(
-        pika.ConnectionParameters(host=settings.RABBITMQ_HOST)
+        pika.ConnectionParameters(
+            host=settings.RABBITMQ_HOST,
+            port=settings.RABBITMQ_PORT,
+            credentials=pika.PlainCredentials(
+                settings.RABBITMQ_USER, settings.RABBITMQ_PASSWORD
+            ),
+        )
     )
     channel = connection.channel()
 

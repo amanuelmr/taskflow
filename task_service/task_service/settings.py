@@ -1,14 +1,12 @@
 import os
 from pathlib import Path
-from datetime import timedelta
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Shared SECRET_KEY across all services
 SECRET_KEY = os.getenv('SECRET_KEY', 'dev-insecure-task-service-key')
 
-DEBUG = True
-ALLOWED_HOSTS = ['*']
+DEBUG = os.getenv('DEBUG', 'True') == 'True'
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -73,20 +71,44 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
+    'DEFAULT_THROTTLE_CLASSES': (
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ),
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '30/min',
+        'user': '300/min',
+    },
 }
 
-# Simple JWT Configuration
-SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
-    'SIGNING_KEY': SECRET_KEY,
-    'ALGORITHM': 'HS256',
-    'AUTH_HEADER_TYPES': ('Bearer',),
-}
+# Simple JWT Configuration — verify-only. Tokens are issued by the user
+# service; this service holds only the RS256 public key. Falls back to
+# HS256 with SECRET_KEY when no key is present (dev/tests).
+def _read_key(path):
+    try:
+        with open(path) as f:
+            return f.read()
+    except OSError:
+        return None
+
+_JWT_PUBLIC_KEY = _read_key(os.getenv('JWT_PUBLIC_KEY_PATH', str(BASE_DIR.parent / 'secrets' / 'jwt_public.pem')))
+
+SIMPLE_JWT: dict = {'AUTH_HEADER_TYPES': ('Bearer',)}
+if _JWT_PUBLIC_KEY:
+    SIMPLE_JWT.update({
+        'ALGORITHM': 'RS256',
+        'SIGNING_KEY': None,
+        'VERIFYING_KEY': _JWT_PUBLIC_KEY,
+    })
+else:
+    SIMPLE_JWT.update({'ALGORITHM': 'HS256', 'SIGNING_KEY': SECRET_KEY})
 
 # RabbitMQ Configuration
 RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', 'rabbitmq')
-CELERY_BROKER_URL = f'amqp://guest:guest@{RABBITMQ_HOST}//'
+RABBITMQ_PORT = int(os.getenv('RABBITMQ_PORT', '5672'))
+RABBITMQ_USER = os.getenv('RABBITMQ_USER', 'guest')
+RABBITMQ_PASSWORD = os.getenv('RABBITMQ_PASSWORD', 'guest')
+CELERY_BROKER_URL = f'amqp://{RABBITMQ_USER}:{RABBITMQ_PASSWORD}@{RABBITMQ_HOST}:{RABBITMQ_PORT}//'
 CELERY_RESULT_BACKEND = 'rpc://'
 
 # drf-yasg (Swagger) Configuration
@@ -110,8 +132,7 @@ USE_TZ = True
 STATIC_URL = '/static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# CORS Configuration (if needed)
+# CORS Configuration
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:80002",
-    # Add other allowed origins
+    origin for origin in os.getenv('CORS_ALLOWED_ORIGINS', '').split(',') if origin
 ]

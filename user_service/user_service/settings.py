@@ -85,16 +85,39 @@ REST_FRAMEWORK = {
     },
 }
 
+# JWT — RS256 keypair. This service is the token issuer: it holds the
+# private key; the other services verify with the public key only.
+# Falls back to HS256 with SECRET_KEY when no keys are present (dev/tests).
+def _read_key(path):
+    try:
+        with open(path) as f:
+            return f.read()
+    except OSError:
+        return None
+
+_JWT_PRIVATE_KEY = _read_key(os.getenv('JWT_PRIVATE_KEY_PATH', str(BASE_DIR.parent / 'secrets' / 'jwt_private.pem')))
+_JWT_PUBLIC_KEY = _read_key(os.getenv('JWT_PUBLIC_KEY_PATH', str(BASE_DIR.parent / 'secrets' / 'jwt_public.pem')))
+
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
-    'ALGORITHM': 'HS256',
-    'SIGNING_KEY': SECRET_KEY,
+    'AUTH_HEADER_TYPES': ('Bearer',),
 }
+if _JWT_PRIVATE_KEY and _JWT_PUBLIC_KEY:
+    SIMPLE_JWT.update({
+        'ALGORITHM': 'RS256',
+        'SIGNING_KEY': _JWT_PRIVATE_KEY,
+        'VERIFYING_KEY': _JWT_PUBLIC_KEY,
+    })
+else:
+    SIMPLE_JWT.update({'ALGORITHM': 'HS256', 'SIGNING_KEY': SECRET_KEY})
 
 # RabbitMQ / Celery
 RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', 'rabbitmq')
-CELERY_BROKER_URL = f'amqp://guest:guest@{RABBITMQ_HOST}//'
+RABBITMQ_PORT = int(os.getenv('RABBITMQ_PORT', '5672'))
+RABBITMQ_USER = os.getenv('RABBITMQ_USER', 'guest')
+RABBITMQ_PASSWORD = os.getenv('RABBITMQ_PASSWORD', 'guest')
+CELERY_BROKER_URL = f'amqp://{RABBITMQ_USER}:{RABBITMQ_PASSWORD}@{RABBITMQ_HOST}:{RABBITMQ_PORT}//'
 CELERY_RESULT_BACKEND = 'rpc://'
 
 # Email — SMTP credentials come from the environment; defaults to the console

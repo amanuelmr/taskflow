@@ -29,6 +29,16 @@ def generate_otp():
     return f"{secrets.randbelow(10**6):06d}"
 
 
+def tokens_for_user(user):
+    """Issue a refresh/access pair carrying the claims the other services
+    read (they have no user database of their own)."""
+    refresh = RefreshToken.for_user(user)
+    refresh['username'] = user.username
+    refresh['email'] = user.email
+    refresh['email_verified'] = user.email_verified
+    return {'refresh': str(refresh), 'access': str(refresh.access_token)}
+
+
 def issue_otp(user, model, subject, body_template):
     """Create a hashed OTP record and email the plain code to the user."""
     otp = generate_otp()
@@ -92,11 +102,7 @@ class UserLoginView(APIView):
         serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data['user']
-        refresh = RefreshToken.for_user(user)
-        return Response({
-            'refresh': str(refresh),
-            'access': str(refresh.access_token),
-        }, status=status.HTTP_200_OK)
+        return Response(tokens_for_user(user), status=status.HTTP_200_OK)
 
 
 class UserDetailView(generics.RetrieveAPIView):
