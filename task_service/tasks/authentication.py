@@ -1,8 +1,7 @@
 # task-service/tasks/authentication.py
 
 from rest_framework_simplejwt.authentication import JWTAuthentication
-from rest_framework_simplejwt.exceptions import InvalidToken, AuthenticationFailed
-from rest_framework import exceptions
+from rest_framework_simplejwt.exceptions import InvalidToken
 
 class CustomJWTAuthentication(JWTAuthentication):
     """
@@ -19,8 +18,14 @@ class CustomJWTAuthentication(JWTAuthentication):
         except KeyError:
             raise InvalidToken("Token contained no recognizable user identification")
 
-        # Create a simple user-like object
+        # Create a simple user-like object. The is_authenticated /
+        # is_anonymous / is_active attributes are required by DRF's
+        # permission classes (IsAuthenticated reads them).
         class SimpleUser:
+            is_authenticated = True
+            is_anonymous = False
+            is_active = True
+
             def __init__(self, id, username, email):
                 self.id = id
                 self.username = username
