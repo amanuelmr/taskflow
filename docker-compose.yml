@@ -1,7 +1,9 @@
-# Microservices architecture: User, Task, and Notification services with
-# RabbitMQ and a PostgreSQL database per service. Credentials come from the
-# .env file (see .env.example). docker-compose.override.yml (auto-loaded)
-# switches the web services to the Django dev server with live reload.
+# TaskFlow — User, Task, and Notification microservices with RabbitMQ and a
+# PostgreSQL database per service. Credentials come from the .env file (see
+# .env.example). docker-compose.override.yml (auto-loaded) switches the web
+# services to the Django dev server with live reload.
+name: taskflow
+
 services:
   # ------------------------------------------------------------------ user
   user-service:

@@ -1,8 +1,8 @@
-# Task Management Microservices
+# TaskFlow
 
-A task management application built as three Django REST Framework
-microservices that communicate over RabbitMQ, each with its own PostgreSQL
-database, orchestrated with Docker Compose.
+TaskFlow is a task management application built as three Django REST
+Framework microservices that communicate over RabbitMQ, each with its own
+PostgreSQL database, orchestrated with Docker Compose.
 
 1. **User Service** (`:8001`) — registration, email OTP verification, JWT
    issuance (RS256), profile and password management.
@@ -59,8 +59,8 @@ flowchart LR
 ## Setup
 
 ```bash
-git clone <repository-url>
-cd task_management_microservice
+git clone https://github.com/amanuelmr/taskflow.git
+cd taskflow
 
 # 1. Environment: copy the example and fill in real values
 cp .env.example .env
