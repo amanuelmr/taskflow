@@ -91,7 +91,9 @@ Swagger UI is available on each service at `/swagger/` (ReDoc at `/redoc/`).
 |---|---|---|
 | POST | `/api/register/` | Register; emails a 6-digit OTP |
 | POST | `/api/verify-email/` | Verify email with OTP |
+| POST | `/api/resend-otp/` | Re-send the verification OTP (if unverified) |
 | POST | `/api/login/` | Obtain JWT pair (requires verified email) |
+| POST | `/api/logout/` | Revoke (blacklist) a refresh token |
 | POST | `/api/token/refresh/` | Refresh an access token |
 | GET | `/api/me/` | Current user profile |
 | PUT/PATCH | `/api/me/update/` | Update profile |
@@ -106,6 +108,10 @@ Swagger UI is available on each service at `/swagger/` (ReDoc at `/redoc/`).
 | GET/POST | `/api/tasks/` | List own/assigned tasks; create a task |
 | GET/PUT/PATCH/DELETE | `/api/tasks/{id}/` | Retrieve/modify/delete (owner only; assignee may read) |
 | POST | `/api/tasks/{id}/assign/` | Assign to a user (owner only) |
+
+The task list supports filtering, search, and ordering:
+`?status=Done`, `?assigned_user_id=2`, `?search=report` (title/description),
+`?ordering=-created_at` (also `updated_at`, `status`). Results are paginated.
 
 ### Notification Service — `http://localhost:8003`
 
@@ -144,7 +150,33 @@ curl -X POST http://localhost:8002/api/tasks/1/assign/ \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <access>" \
   -d '{"user_id":2}'
+
+# Filter your tasks
+curl "http://localhost:8002/api/tasks/?status=Assigned&ordering=-created_at" \
+  -H "Authorization: Bearer <access>"
+
+# Log out (revoke the refresh token)
+curl -X POST http://localhost:8001/api/logout/ \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <access>" \
+  -d '{"refresh":"<refresh>"}'
 ```
+
+## Run the demo locally
+
+`docker compose up --build`, then drive the three Swagger UIs at
+`:8001/:8002/:8003`. Two moments worth showing off:
+
+- **Per-user authorization** — register a second user, log in as them, and
+  request the first user's task by id: you get `404`, not `403` (existence
+  is hidden, not just access).
+- **Event durability** — `docker compose stop notification-consumer`, create
+  or assign a task, then `docker compose start notification-consumer`: the
+  event was held in the durable queue and is delivered on reconnect (check
+  `GET /api/logs/`). Nothing is lost while the consumer is down.
+
+With the default console email backend, OTPs are printed to the
+`user-celery-worker` logs (`docker compose logs user-celery-worker`).
 
 ## Development
 
@@ -160,6 +192,14 @@ ruff check .
 CI (GitHub Actions) lints and tests all three services and builds the
 Docker images on every push/PR.
 
+## Deploying later
+
+Not deployed yet. When you do, run the production-shaped stack
+(`docker compose -f docker-compose.yml up`) on a small VPS with `DEBUG=False`
+and real `ALLOWED_HOSTS`. One required addition for that mode: serve static
+files (e.g. add `whitenoise`), otherwise Swagger UI renders unstyled because
+Django stops serving static assets when `DEBUG=False`.
+
 ### Notes & future work
 
 - `rabbitmq_utils.py` is intentionally duplicated between user and task
@@ -168,6 +208,8 @@ Docker images on every push/PR.
   exactly-once event delivery becomes a requirement.
 - The notification service only has user ids for task events; a user cache
   (fed from user_events) would let it email assignees.
+- Possible next features: task `due_date`/`priority` fields and a lightweight
+  `/healthz` endpoint per service.
 
 ## Security
 

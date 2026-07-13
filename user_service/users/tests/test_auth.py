@@ -160,6 +160,64 @@ class TestPasswordReset:
         assert not PasswordReset.objects.filter(user=user).exists()  # single use
 
 
+class TestResendOTP:
+    def test_resend_issues_new_otp_for_unverified_user(self, api_client):
+        register(api_client)
+        first_otp = latest_otp()
+        response = api_client.post('/api/resend-otp/', {'email': 'bob@example.com'})
+        assert response.status_code == 200
+        assert len(mail.outbox) == 2
+        # A fresh, single valid record exists; the old code no longer verifies.
+        assert EmailVerification.objects.filter(user__email='bob@example.com').count() == 1
+        assert api_client.post(
+            '/api/verify-email/', {'email': 'bob@example.com', 'otp': first_otp}
+        ).status_code == 400
+        assert api_client.post(
+            '/api/verify-email/', {'email': 'bob@example.com', 'otp': latest_otp()}
+        ).status_code == 200
+
+    def test_resend_unknown_email_uniform_and_silent(self, api_client):
+        response = api_client.post('/api/resend-otp/', {'email': 'nobody@example.com'})
+        assert response.status_code == 200
+        assert mail.outbox == []
+
+    def test_resend_for_verified_user_sends_nothing(self, api_client, user):
+        response = api_client.post('/api/resend-otp/', {'email': user.email})
+        assert response.status_code == 200
+        assert mail.outbox == []
+        assert not EmailVerification.objects.filter(user=user).exists()
+
+
+class TestLogout:
+    def _tokens(self, api_client, user):
+        return api_client.post(
+            '/api/login/', {'username': user.username, 'password': PASSWORD}
+        ).data
+
+    def test_logout_requires_auth(self, api_client):
+        assert api_client.post('/api/logout/', {'refresh': 'x'}).status_code == 401
+
+    def test_logout_blacklists_refresh_token(self, api_client, user):
+        tokens = self._tokens(api_client, user)
+        api_client.credentials(HTTP_AUTHORIZATION=f'Bearer {tokens["access"]}')
+
+        assert api_client.post(
+            '/api/logout/', {'refresh': tokens['refresh']}
+        ).status_code == 205
+        # The blacklisted refresh token can no longer be used.
+        api_client.credentials()
+        assert api_client.post(
+            '/api/token/refresh/', {'refresh': tokens['refresh']}
+        ).status_code == 401
+
+    def test_logout_rejects_garbage_token(self, api_client, user):
+        tokens = self._tokens(api_client, user)
+        api_client.credentials(HTTP_AUTHORIZATION=f'Bearer {tokens["access"]}')
+        assert api_client.post(
+            '/api/logout/', {'refresh': 'not-a-token'}
+        ).status_code == 400
+
+
 class TestThrottling:
     def test_otp_endpoints_throttle(self, api_client, monkeypatch):
         monkeypatch.setitem(ScopedRateThrottle.THROTTLE_RATES, 'otp', '2/hour')

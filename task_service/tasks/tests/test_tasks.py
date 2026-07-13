@@ -94,3 +94,34 @@ class TestPagination:
         assert response.status_code == 200
         assert response.data['count'] == 3
         assert len(response.data['results']) == 3
+
+
+class TestFiltering:
+    def test_filter_by_status(self, alice):
+        create_task(alice, title='pending one')
+        create_task(alice, title='done one', status='Done')
+        response = alice.get('/api/tasks/?status=Done')
+        assert response.status_code == 200
+        titles = [t['title'] for t in response.data['results']]
+        assert titles == ['done one']
+
+    def test_search_by_title(self, alice):
+        create_task(alice, title='write quarterly report')
+        create_task(alice, title='buy milk')
+        response = alice.get('/api/tasks/?search=report')
+        titles = [t['title'] for t in response.data['results']]
+        assert titles == ['write quarterly report']
+
+    def test_ordering(self, alice):
+        create_task(alice, title='first')
+        create_task(alice, title='second')
+        response = alice.get('/api/tasks/?ordering=created_at')
+        titles = [t['title'] for t in response.data['results']]
+        assert titles == ['first', 'second']
+
+    def test_filter_still_respects_ownership(self, alice, bob):
+        create_task(alice, title='alice secret', status='Done')
+        # Bob filtering by the same status must not surface Alice's task.
+        response = bob.get('/api/tasks/?status=Done')
+        assert response.status_code == 200
+        assert response.data['results'] == []

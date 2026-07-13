@@ -1,8 +1,9 @@
 from django.db import transaction
 from django.db.models import Q
+from django_filters.rest_framework import DjangoFilterBackend
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
-from rest_framework import status, viewsets
+from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -17,9 +18,17 @@ class TaskViewSet(viewsets.ModelViewSet):
     """
     CRUD operations for tasks. Users see only tasks they own or are
     assigned to; only the owner can modify a task.
+
+    Supports ?status=, ?assigned_user_id=, ?search= (title/description),
+    and ?ordering= (created_at/updated_at/status).
     """
     serializer_class = TaskSerializer
     permission_classes = [IsAuthenticated, IsOwner]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['status', 'assigned_user_id']
+    search_fields = ['title', 'description']
+    ordering_fields = ['created_at', 'updated_at', 'status']
+    ordering = ['-created_at']
 
     def get_queryset(self):
         uid = self.request.user.id

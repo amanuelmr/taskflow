@@ -23,6 +23,16 @@ class EmailVerificationSerializer(serializers.Serializer):
     otp = serializers.CharField(max_length=6)
 
 
+class ResendOTPSerializer(serializers.Serializer):
+    """Used for /resend-otp/."""
+    email = serializers.EmailField()
+
+
+class LogoutSerializer(serializers.Serializer):
+    """Used for /logout/."""
+    refresh = serializers.CharField()
+
+
 class UserLoginSerializer(serializers.Serializer):
     """Used for /login/. Validates credentials and email verification."""
     username = serializers.CharField()

@@ -11,14 +11,17 @@ from django.db import transaction
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import EmailVerification, PasswordReset
 from .rabbitmq_utils import publish_event
 from .serializers import (
     EmailVerificationSerializer,
+    LogoutSerializer,
     PasswordChangeSerializer,
     PasswordResetSerializer,
+    ResendOTPSerializer,
     UserLoginSerializer,
     UserRegistrationSerializer,
     UserSerializer,
@@ -105,6 +108,37 @@ class EmailVerificationView(APIView):
         return Response({'detail': 'Email verified successfully.'}, status=status.HTTP_200_OK)
 
 
+class ResendOTPView(APIView):
+    """Re-issue an email-verification OTP. The verification code expires, so
+    without this a new user whose code lapses could never verify or log in."""
+    permission_classes = [permissions.AllowAny]
+    throttle_scope = 'otp'
+
+    def post(self, request):
+        serializer = ResendOTPSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        email = serializer.validated_data['email']
+
+        # Uniform response regardless of whether the account exists or is
+        # already verified, to prevent user enumeration.
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            user = None
+        if user is not None and not user.email_verified:
+            EmailVerification.objects.filter(user=user).delete()
+            issue_otp(
+                user,
+                EmailVerification,
+                'Verify your email',
+                'Your OTP for email verification is {otp}',
+            )
+        return Response(
+            {'detail': 'If that email exists and is unverified, a code has been sent.'},
+            status=status.HTTP_200_OK,
+        )
+
+
 class UserLoginView(APIView):
     serializer_class = UserLoginSerializer
     permission_classes = [permissions.AllowAny]
@@ -115,6 +149,24 @@ class UserLoginView(APIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data['user']
         return Response(tokens_for_user(user), status=status.HTTP_200_OK)
+
+
+class LogoutView(APIView):
+    """Revoke a refresh token by blacklisting it."""
+    serializer_class = LogoutSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        serializer = self.serializer_class(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            RefreshToken(serializer.validated_data['refresh']).blacklist()
+        except TokenError:
+            return Response(
+                {'detail': 'Invalid or expired refresh token.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(status=status.HTTP_205_RESET_CONTENT)
 
 
 class UserDetailView(generics.RetrieveAPIView):
