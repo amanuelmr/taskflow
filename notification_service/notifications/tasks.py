@@ -1,22 +1,39 @@
+import logging
+
 from celery import shared_task
+from django.conf import settings
 from django.core.mail import send_mail
 
-@shared_task
+logger = logging.getLogger(__name__)
+
+
+@shared_task(retry_backoff=True, max_retries=3)
 def send_notification_email(event_type, payload):
     """
-    Example Celery task for sending notification emails.
+    Send a notification email for an event. Task/assignment events carry
+    only user ids (emails live in the user service), so they are logged;
+    an email is sent only when the payload includes an address.
     """
     if event_type == 'user_registered':
-        # user_registered payload might contain otp_code, email, etc.
-        otp_code = payload.get('otp_code', '')
-        email = payload.get('email', '')
-        subject = "Your Verification OTP (From Notification Service)"
-        message = f"Your OTP code is {otp_code}. Please verify within 5 minutes."
-        send_mail(subject, message, 'no-reply@example.com', [email])
+        email = payload.get('email')
+        username = payload.get('username', 'there')
+        if email:
+            send_mail(
+                'Welcome to Task Manager',
+                f'Hi {username}, your account has been created.',
+                settings.DEFAULT_FROM_EMAIL,
+                [email],
+            )
     elif event_type == 'task_created':
-        # Notify assigned user if assigned_user_id is known (or do something else).
-        pass
+        logger.info(
+            'Task %s created by user %s',
+            payload.get('task_id'), payload.get('owner_id'),
+        )
     elif event_type == 'task_assigned':
-        # Notify user about new assignment, etc.
-        pass
+        logger.info(
+            'Task %s assigned to user %s',
+            payload.get('task_id'), payload.get('assigned_user_id'),
+        )
+    else:
+        logger.warning('Unhandled event type: %s', event_type)
     return True

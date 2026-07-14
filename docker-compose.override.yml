@@ -1,0 +1,41 @@
+# Development overrides — auto-loaded by `docker compose up`.
+# Mounts the source for live reload and uses the Django dev server.
+# For a production-shaped run: docker compose -f docker-compose.yml up
+services:
+  user-service:
+    command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
+    volumes:
+      - ./user_service:/app
+      - ./secrets:/keys:ro
+
+  user-celery-worker:
+    volumes:
+      - ./user_service:/app
+      - ./secrets:/keys:ro
+
+  task-service:
+    command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
+    volumes:
+      - ./task_service:/app
+      - ./secrets:/keys:ro
+
+  task-celery-worker:
+    volumes:
+      - ./task_service:/app
+      - ./secrets:/keys:ro
+
+  notification-service:
+    command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
+    volumes:
+      - ./notification_service:/app
+      - ./secrets:/keys:ro
+
+  notification-celery-worker:
+    volumes:
+      - ./notification_service:/app
+      - ./secrets:/keys:ro
+
+  notification-consumer:
+    volumes:
+      - ./notification_service:/app
+      - ./secrets:/keys:ro
